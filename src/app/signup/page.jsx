@@ -14,19 +14,32 @@ export default function Signup() {
     e.preventDefault();
     setLoading(true);
 
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
     setLoading(false);
 
-    if (error) return alert(error.message);
-    alert("Signup successful! Please log in.");
-    router.push("/login"); // after signup, redirect to login
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    if (data.session) {
+      // ✅ Auto-login works only if email confirmation is disabled
+      router.push("/dashboard");
+    } else {
+      alert("Check your email for confirmation to log in.");
+      router.push("/login");
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="bg-white shadow-lg rounded-2xl p-8 w-full max-w-md border border-gray-200">
         <h1 className="text-3xl font-bold text-green-700 mb-6 text-center">
-          Create an Account ✨
+          Create Your Account ✨
         </h1>
         <form onSubmit={handleSignup} className="space-y-5">
           <div>
@@ -49,7 +62,7 @@ export default function Signup() {
             </label>
             <input
               type="password"
-              placeholder="Create a password"
+              placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required

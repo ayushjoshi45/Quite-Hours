@@ -18,7 +18,7 @@ export default function Login() {
     setLoading(false);
 
     if (error) return alert(error.message);
-    router.push("/quiet-hours"); // redirect after login
+    router.push("/dashboard"); // redirect after login
   };
 
   return (

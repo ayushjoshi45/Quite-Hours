@@ -2,184 +2,192 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { Clock, ArrowLeft } from "lucide-react";
 
 export default function QuietHoursPage() {
+  const [user, setUser] = useState(null);
+  const [quietHours, setQuietHours] = useState([]);
   const [startDate, setStartDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endDate, setEndDate] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [quietHours, setQuietHours] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
-  // Fetch current user's quiet hours
-  const fetchQuietHours = async () => {
-    const session = await supabase.auth.getSession();
-    const user = session.data.session?.user;
-    if (!user) return;
-
-    const { data, error } = await supabase
-      .from("quiet_hours")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("start_time", { ascending: true });
-
-    if (error) return console.error(error.message);
-    setQuietHours(data);
-  };
-
+  // get session user
   useEffect(() => {
-    fetchQuietHours().then(() => setLoading(false));
+    const getUser = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+    };
+    getUser();
   }, []);
 
-  // Check overlap
-  const isOverlapping = (newStart, newEnd) => {
-    const newStartDate = new Date(newStart);
-    const newEndDate = new Date(newEnd);
+  // fetch quiet hours
+  useEffect(() => {
+    if (!user) return;
+    const fetchQuietHours = async () => {
+      const { data, error } = await supabase
+        .from("quiet_hours")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("start_time", { ascending: true });
+      if (error) console.error(error.message);
+      else setQuietHours(data);
+    };
+    fetchQuietHours();
+  }, [user]);
 
-    return quietHours.some((qh) => {
-      const existingStart = new Date(qh.start_time);
-      const existingEnd = new Date(qh.end_time);
-      return newStartDate < existingEnd && newEndDate > existingStart;
+  // format IST time
+  const formatIST = (dateString) => {
+    return new Date(dateString).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      dateStyle: "medium",
+      timeStyle: "short",
     });
   };
 
-  // Add quiet hour
-  const handleAddQuietHour = async (e) => {
+  // handle add quiet hour
+  const handleAdd = async (e) => {
     e.preventDefault();
-
-    if (!startDate || !startTime || !endDate || !endTime)
-      return alert("Please fill all fields.");
-
-    const startDateTime = `${startDate}T${startTime}`;
-    const endDateTime = `${endDate}T${endTime}`;
-
-    if (new Date(startDateTime) >= new Date(endDateTime))
-      return alert("End time must be after start time.");
-
-    if (isOverlapping(startDateTime, endDateTime)) {
-      return alert("This time block overlaps with an existing quiet hour!");
+    if (!startDate || !startTime || !endDate || !endTime) {
+      alert("Please fill all fields");
+      return;
     }
 
-    const session = await supabase.auth.getSession();
-    const user = session.data.session?.user;
-    if (!user) return alert("User not authenticated.");
+    // build ISO datetime in IST
+    const startDateTime = new Date(`${startDate}T${startTime}:00+05:30`);
+    const endDateTime = new Date(`${endDate}T${endTime}:00+05:30`);
 
-    const { error } = await supabase.from("quiet_hours").insert([
-      {
-        user_id: user.id,
-        start_time: startDateTime,
-        end_time: endDateTime,
-      },
-    ]);
+    const { data, error } = await supabase
+      .from("quiet_hours")
+      .insert([
+        { user_id: user.id, start_time: startDateTime, end_time: endDateTime },
+      ])
+      .select();
 
     if (error) {
       alert(error.message);
     } else {
-      alert("Quiet hour added successfully!");
+      setQuietHours((prev) => [...prev, data[0]]);
       setStartDate("");
       setStartTime("");
       setEndDate("");
       setEndTime("");
-      fetchQuietHours();
     }
+    router.push("/dashboard");
   };
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4">
-        <h1 className="text-3xl font-bold text-green-700 mb-6">
-          Quiet Hours Scheduler
-        </h1>
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <nav className="flex items-center justify-between bg-green-600 text-white px-6 py-4 shadow-md">
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <Clock size={22} /> Quiet Hours
+          </h1>
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="flex items-center gap-2 bg-red-500 px-3 py-1 rounded-lg hover:bg-red-600 transition"
+          >
+            <ArrowLeft size={18} /> Back to Dashboard
+          </button>
+        </nav>
 
         {/* Form */}
-        <form
-          onSubmit={handleAddQuietHour}
-          className="bg-white shadow-lg rounded-2xl p-6 w-full max-w-lg space-y-4 border border-gray-200"
-        >
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-gray-700 font-medium mb-1">
-                Start Date
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-400 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-700 font-medium mb-1">
-                Start Time
-              </label>
-              <input
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-400 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-700 font-medium mb-1">
-                End Date
-              </label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-400 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-700 font-medium mb-1">
-                End Time
-              </label>
-              <input
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-400 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-semibold transition duration-200"
+        <div className="p-6 flex flex-col items-center">
+          <form
+            onSubmit={handleAdd}
+            className="bg-white p-4 rounded-xl shadow-md mb-6 flex flex-col gap-4"
+            style={{ width: "70vw" }}
           >
-            Add Quiet Hour
-          </button>
-        </form>
+            <h2 className="text-lg font-semibold text-gray-700">
+              Add Quiet Hour
+            </h2>
 
-        {/* List of quiet hours */}
-        <div className="mt-8 w-full max-w-lg">
-          <h2 className="text-xl font-semibold text-gray-700 mb-3">
-            Your Quiet Hours
-          </h2>
-          {loading ? (
-            <p>Loading...</p>
-          ) : quietHours.length === 0 ? (
-            <p className="text-gray-600">No quiet hours set.</p>
-          ) : (
-            <ul className="space-y-2">
-              {quietHours.map((qh) => (
-                <li
-                  key={qh.id}
-                  className="bg-gray-100 border border-gray-300 rounded-lg p-3 flex justify-between"
-                >
-                  <span>
-                    {new Date(qh.start_time).toLocaleString()} →{" "}
-                    {new Date(qh.end_time).toLocaleString()}
-                  </span>
-                </li>
-              ))}
+            {/* Start Date + Time */}
+            <div className="flex gap-4">
+              <div className="flex flex-col flex-1">
+                <label className="text-sm font-medium text-gray-600">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="border rounded px-3 py-2"
+                />
+              </div>
+              <div className="flex flex-col flex-1">
+                <label className="text-sm font-medium text-gray-600">
+                  Start Time (IST)
+                </label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="border rounded px-3 py-2"
+                />
+              </div>
+            </div>
+
+            {/* End Date + Time */}
+            <div className="flex gap-4">
+              <div className="flex flex-col flex-1">
+                <label className="text-sm font-medium text-gray-600">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="border rounded px-3 py-2"
+                />
+              </div>
+              <div className="flex flex-col flex-1">
+                <label className="text-sm font-medium text-gray-600">
+                  End Time (IST)
+                </label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="border rounded px-3 py-2"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+            >
+              Save
+            </button>
+          </form>
+
+          {/* List quiet hours */}
+          <div style={{ width: "70vw" }}>
+            <ul className="space-y-3">
+              {quietHours.length === 0 ? (
+                <p className="text-gray-600">No quiet hours set.</p>
+              ) : (
+                quietHours.map((qh) => (
+                  <li
+                    key={qh.id}
+                    className="p-4 bg-white rounded-xl shadow-md flex justify-between items-center hover:shadow-lg transition"
+                  >
+                    <span className="text-gray-800 font-medium">
+                      From <b>{formatIST(qh.start_time)}</b> <br /> To{" "}
+                      <b>{formatIST(qh.end_time)}</b>
+                    </span>
+                  </li>
+                ))
+              )}
             </ul>
-          )}
+          </div>
         </div>
       </div>
     </ProtectedRoute>
